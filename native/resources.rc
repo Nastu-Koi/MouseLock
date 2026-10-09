@@ -1,0 +1,34 @@
+#pragma code_page(65001)
+
+#define IDI_MOUSELOCK 101
+
+#ifndef RT_MANIFEST
+#define RT_MANIFEST 24
+#endif
+
+IDI_MOUSELOCK ICON "MouseLock.ico"
+
+1 RT_MANIFEST "app.manifest"
+
+1 VERSIONINFO
+FILEVERSION 2,1,0,0
+PRODUCTVERSION 2,1,0,0
+FILEOS 0x40004L
+FILETYPE 0x1L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "080404B0"
+        BEGIN
+            VALUE "FileDescription", "MouseLock Game · 操作通知与长按退出\0"
+            VALUE "FileVersion", "2.1.0\0"
+            VALUE "ProductName", "MouseLockGame\0"
+            VALUE "ProductVersion", "2.1.0\0"
+            VALUE "OriginalFilename", "MouseLockGame.exe\0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0804, 1200
+    END
+END
