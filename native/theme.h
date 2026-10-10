@@ -20,7 +20,7 @@ namespace Ui
     struct Theme
     {
         UINT dpi = 96;
-        HFONT body = nullptr, small = nullptr, heading = nullptr, display = nullptr, key = nullptr;
+        HFONT body = nullptr, caption = nullptr, heading = nullptr, display = nullptr, key = nullptr;
         HBRUSH background = nullptr, panel = nullptr;
         Theme();
         ~Theme();

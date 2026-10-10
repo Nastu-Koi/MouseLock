@@ -11,6 +11,7 @@ native/*.lib
 native/*.pdb
 native/MouseLock.exe
 native/MouseLockGame.exe
+native/config-test.exe
 build/
 dist/
 native/vc*.pdb

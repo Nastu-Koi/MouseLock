@@ -7,8 +7,8 @@ WINDRES="${WINDRES:-x86_64-w64-mingw32-windres}"
 PREPROCESSOR="${PREPROCESSOR:-x86_64-w64-mingw32-cpp}"
 mkdir -p build
 "$WINDRES" --preprocessor="$PREPROCESSOR" -I native native/resources.rc -O coff -o build/resources.o
-"$CXX" -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror -DUNICODE -D_UNICODE -DNOMINMAX \
-  -municode -mwindows -static -s native/config.cpp native/locker.cpp native/theme.cpp native/notifications.cpp \
+"$CXX" -std=c++17 -O2 -ffunction-sections -fdata-sections -Wall -Wextra -Wpedantic -Werror -DUNICODE -D_UNICODE -DNOMINMAX \
+  -municode -mwindows -static -s -Wl,--gc-sections native/config.cpp native/locker.cpp native/theme.cpp native/notifications.cpp \
   native/settings.cpp native/main.cpp build/resources.o -o build/MouseLockGame.exe \
   -luser32 -lshell32 -ladvapi32 -lcomctl32 -lgdi32 -lgdiplus -ldwmapi -lole32 -luuid
 "$CXX" -std=c++17 -O2 -Wall -Wextra -Werror -DUNICODE -D_UNICODE -DNOMINMAX -municode -static \

@@ -49,14 +49,14 @@
 
 ## 编译与验证
 
-Windows 10/11，Visual Studio 2022 Build Tools（C++ 与资源编译器）：
+Windows 10/11，Visual Studio 2022 任意版本（Community、Build Tools 等）的 C++ 工具。脚本通过 vswhere 自动查找安装位置，也可以直接在开发者命令提示符中运行：
 
 ```bat
 cd native
 build.bat
 ```
 
-生成 `native\MouseLockGame.exe`。也可以使用 MinGW-w64 在 Linux 交叉编译：
+生成 `native\MouseLockGame.exe` 和 `native\config-test.exe`。也可以使用 MinGW-w64 在 Linux 交叉编译：
 
 ```sh
 native/build-mingw.sh
@@ -64,18 +64,21 @@ native/build-mingw.sh
 
 可用 `CXX`、`WINDRES`、`PREPROCESSOR` 指定编译器，生成 `build/MouseLockGame.exe` 和 Windows 配置测试程序。发布程序静态链接 C++ 运行库，不依赖 .NET、浏览器或附加 DLL。
 
-连续长按行为测试：
+连续长按与通知状态的测试不依赖 Windows：
 
 ```sh
-g++ -std=c++17 -Wall -Wextra -Werror native/tests/hold_exit_test.cpp -o /tmp/mouselock-hold-test
-/tmp/mouselock-hold-test
+for test in hold_exit notification_state; do
+  g++ -std=c++17 -Wall -Wextra -Werror native/tests/${test}_test.cpp -o /tmp/mouselock-$test && /tmp/mouselock-$test
+done
 ```
 
-在 Windows 上运行配置测试，将测试数据放到一个临时文件夹：
+在 Windows 上运行配置测试，将测试数据放到一个临时文件夹（MSVC 构建的程序在 `native\` 下）：
 
 ```powershell
 .\build\config-test.exe "$env:TEMP\MouseLock-config-test"
 ```
+
+每次推送和 PR 都会由 GitHub Actions（`.github/workflows/build.yml`）分别用 MinGW-w64 和 MSVC 构建，并运行以上测试。
 
 界面冒烟测试：指定已存在的输出文件夹。程序以独立预览实例运行，不注册全局快捷键、不锁鼠标、不读写用户配置；生成主窗口与两页设置的截图，然后通过正式退出入口关闭：
 

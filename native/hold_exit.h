@@ -41,6 +41,10 @@ public:
 
     bool Holding() const { return holding_ && !blocked_; }
 
+    // A hold is counting, has fired, or a release is still required. While this
+    // is false the caller has nothing to time and may stop polling.
+    bool Pending() const { return holding_ || fired_ || blocked_; }
+
 private:
     void Reset() { holding_ = fired_ = false; started_ = 0; }
     bool holding_ = false;

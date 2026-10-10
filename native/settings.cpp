@@ -202,13 +202,13 @@ namespace
             {
                 int y=159+64*i;
                 Ui::Label(dc,t,Labels[i],52,y,240,24,nullptr,i==2?Ui::Accent:Ui::Text);
-                Ui::Label(dc,t,Descriptions[i],52,y+25,242,22,t.small,Ui::Muted);
+                Ui::Label(dc,t,Descriptions[i],52,y+25,242,22,t.caption,Ui::Muted);
                 if(i<4) Ui::Line(dc,t,52,y+57,592);
             }
             Ui::Line(dc,t,52,482,592);
             Ui::Label(dc,t,L"退出前需要按住",52,492,242,34);
-            Ui::Label(dc,t,L"1–10 秒",516,492,120,34,t.small,Ui::Muted);
-            Ui::Label(dc,t,L"点击按键框录入 · Esc 取消 · Backspace 清空",28,556,644,25,t.small,Ui::Muted);
+            Ui::Label(dc,t,L"1–10 秒",516,492,120,34,t.caption,Ui::Muted);
+            Ui::Label(dc,t,L"点击按键框录入 · Esc 取消 · Backspace 清空",28,556,644,25,t.caption,Ui::Muted);
         }
         else
         {
@@ -216,12 +216,12 @@ namespace
             Ui::Label(dc,t,L"目标屏幕",52,222,172,34);
             Ui::Line(dc,t,52,273,592);
             Ui::Label(dc,t,L"自动锁定的游戏",52,281,500,30);
-            Ui::Label(dc,t,L"填写 .exe 进程名，多个游戏用分号分隔。",52,364,592,24,t.small,Ui::Muted);
+            Ui::Label(dc,t,L"填写 .exe 进程名，多个游戏用分号分隔。",52,364,592,24,t.caption,Ui::Muted);
             Ui::Line(dc,t,52,401,592);
-            Ui::Label(dc,t,L"临时解锁后，松开按键会回到原来锁定的屏幕。",52,504,592,24,t.small,Ui::Muted);
-            Ui::Label(dc,t,L"快捷键始终全局生效，收起窗口后也能长按退出。",28,556,644,25,t.small,Ui::Muted);
+            Ui::Label(dc,t,L"临时解锁后，松开按键会回到原来锁定的屏幕。",52,504,592,24,t.caption,Ui::Muted);
+            Ui::Label(dc,t,L"快捷键始终全局生效，收起窗口后也能长按退出。",28,556,644,25,t.caption,Ui::Muted);
         }
-        Ui::Label(dc,t,ctx->status,160,608,375,40,t.small,ctx->error?Ui::Accent:Ui::Muted);
+        Ui::Label(dc,t,ctx->status,160,608,375,40,t.caption,ctx->error?Ui::Accent:Ui::Muted);
     }
     LRESULT CALLBACK WindowProc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp)
     {

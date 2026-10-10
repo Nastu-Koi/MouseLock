@@ -1,0 +1,45 @@
+name: build
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  mingw:
+    name: MinGW-w64 cross build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install MinGW-w64
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends g++-mingw-w64-x86-64
+      - name: Unit tests
+        run: |
+          for test in hold_exit notification_state; do
+            g++ -std=c++17 -Wall -Wextra -Werror "native/tests/${test}_test.cpp" -o "$RUNNER_TEMP/$test"
+            "$RUNNER_TEMP/$test"
+          done
+      - name: Build
+        run: native/build-mingw.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MouseLockGame-mingw
+          path: build/MouseLockGame.exe
+
+  msvc:
+    name: MSVC build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        shell: cmd
+        run: call native\build.bat
+      - name: Config tests
+        shell: cmd
+        run: native\config-test.exe "%RUNNER_TEMP%\mouselock-config"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MouseLockGame-msvc
+          path: native/MouseLockGame.exe

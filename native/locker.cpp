@@ -23,6 +23,22 @@ namespace
         return TRUE;
     }
 
+    struct DisplayQuery
+    {
+        const std::wstring& device;
+        HMONITOR found;
+    };
+
+    BOOL CALLBACK FindMonitorProc(HMONITOR hMon, HDC, LPRECT, LPARAM data)
+    {
+        auto* query = reinterpret_cast<DisplayQuery*>(data);
+        MONITORINFOEXW mi{};
+        mi.cbSize = sizeof(mi);
+        if (!GetMonitorInfoW(hMon, &mi) || query->device != mi.szDevice)
+            return TRUE;
+        query->found = hMon;
+        return FALSE;
+    }
 }
     std::vector<DisplayInfo> GetDisplays()
     {
@@ -36,12 +52,11 @@ namespace
         return list;
     }
 
-bool Locker::LockToCurrentScreen()
+HMONITOR FindDisplay(const std::wstring& device)
 {
-    POINT pt{};
-    if (!GetCursorPos(&pt))
-        return false;
-    return LockToScreenAt(pt.x, pt.y);
+    DisplayQuery query{ device, nullptr };
+    EnumDisplayMonitors(nullptr, nullptr, FindMonitorProc, reinterpret_cast<LPARAM>(&query));
+    return query.found;
 }
 
 bool Locker::LockToScreenAt(int x, int y)

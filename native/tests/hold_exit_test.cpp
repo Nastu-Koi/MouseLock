@@ -5,14 +5,17 @@
 int main()
 {
     HoldToExit hold;
+    assert(!hold.Pending()); // nothing to poll for while idle
     assert(!hold.Update(true, 0, 2000));
+    assert(hold.Pending());
     assert(!hold.Update(true, 500, 2000)); // keyboard auto-repeat
     assert(!hold.Update(true, 1999, 2000));
     assert(hold.Elapsed(1999, 2000) == 1999);
     assert(hold.Update(true, 2000, 2000));
     assert(!hold.Update(true, 9000, 2000)); // only one exit request
+    assert(hold.Pending()); // still down after firing
     assert(!hold.Update(false, 9100, 2000));
-    assert(!hold.Holding());
+    assert(!hold.Holding() && !hold.Pending());
 
     assert(!hold.Update(true, 10000, 2000));
     assert(!hold.Update(false, 11999, 2000)); // releasing cancels
@@ -21,10 +24,12 @@ int main()
     assert(hold.Update(true, 14000, 2000));
 
     hold.RequireRelease(); // editing a shortcut or returning from sleep
+    assert(hold.Pending() && !hold.Holding()); // polling must continue to see the release
     assert(!hold.Update(true, 20000, 1000));
     assert(!hold.Update(true, 40000, 1000));
     assert(!hold.Holding());
     assert(!hold.Update(false, 41000, 1000));
+    assert(!hold.Pending());
     assert(!hold.Update(true, 42000, 1000));
     assert(hold.Update(true, 43000, 1000));
 

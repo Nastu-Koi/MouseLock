@@ -7,10 +7,10 @@
 #include "notifications.h"
 #include "notification_state.h"
 #include "resource.h"
+#include "gdiplus_compat.h"
 #include <shellapi.h>
 #include <shlobj.h>
 #include <commctrl.h>
-#include <gdiplus.h>
 #include <array>
 #include <algorithm>
 #include <cwchar>
@@ -18,8 +18,8 @@
 namespace
 {
     constexpr UINT WM_EXIT_REQUEST=WM_APP+10, WM_REFRESH_LOCK=WM_APP+11, WM_EMERGENCY=WM_APP+12, WM_REOPEN=WM_APP+13;
-    constexpr UINT TimerExit=10, TimerLock=11, TimerFinishExit=12, TimerPreview=90, TimerNotificationPreview=91;
-    constexpr UINT ExitNoticeMs=1800;
+    constexpr UINT TimerExit=10, TimerLock=11, TimerFinishExit=12, TimerUnlockKey=13, TimerPreview=90, TimerNotificationPreview=91;
+    constexpr UINT ExitNoticeMs=1800, ExitPollMs=25, LockPollMs=125;
     constexpr int HotkeyToggle=1, HotkeyLeft=2, HotkeyRight=3;
     const wchar_t* MainClass=L"MouseLockGame.Main.v2";
     AppConfig cfg;
@@ -40,6 +40,7 @@ namespace
     HWND cachedForeground=nullptr;
     DWORD cachedPid=0;
     bool cachedGame=false, shuttingDown=false, trayAdded=false, preview=false, rearmShortcuts=false;
+    bool exitPolling=false;
     bool temporarilyUnlocked=false;
     bool noticesReady=false, notificationPreview=false;
     bool previewNoFocusSteal=true;
@@ -68,14 +69,21 @@ namespace
     void ApplyLock();
     void RequestExit(bool notify=true);
 
+    // The fast exit poll only runs while a hold or a shortcut re-arm is in flight. The keyboard
+    // hook starts it at once; TimerLock repeats the check, so a lost hook merely delays the start.
+    void PaceExitPoll()
+    {
+        bool wanted=!shuttingDown && !preview && (rearmShortcuts || exitGesture.Pending());
+        if(wanted==exitPolling) return;
+        if(wanted) exitPolling=SetTimer(mainWindow,TimerExit,ExitPollMs,nullptr)!=0;
+        else { KillTimer(mainWindow,TimerExit); exitPolling=false; }
+    }
+    void BlockExitGesture()
+    { exitGesture.RequireRelease(); PaceExitPoll(); }
     HMONITOR CursorMonitor()
     { POINT point{}; GetCursorPos(&point); return MonitorFromPoint(point,MONITOR_DEFAULTTOPRIMARY); }
     HMONITOR ConfiguredMonitor()
-    {
-        if(cfg.monitor.empty()) return nullptr;
-        for(const auto& display:GetDisplays()) if(display.device==cfg.monitor) return display.handle;
-        return nullptr;
-    }
+    { return cfg.monitor.empty()?nullptr:FindDisplay(cfg.monitor); }
     bool ForegroundGame(HWND& foreground)
     {
         foreground=GetForegroundWindow(); DWORD pid=0;
@@ -254,12 +262,12 @@ namespace
         bool changedTarget=candidate.monitor!=cfg.monitor || candidate.gameOnly!=cfg.gameOnly || candidate.enabled!=cfg.enabled;
         cfg=candidate; cachedForeground=nullptr; runtimeMessage.clear();
         if(changedTarget) { locker.Unlock(); targetMonitor=ConfiguredMonitor(); if(!targetMonitor) targetMonitor=CursorMonitor(); }
-        exitGesture.RequireRelease(); rearmShortcuts=true;
+        rearmShortcuts=true; BlockExitGesture();
         ApplyLock(); SyncUi(); return true;
     }
     void SetEnabled(bool enabled)
     {
-        cfg.enabled=enabled; runtimeMessage.clear(); exitGesture.RequireRelease();
+        cfg.enabled=enabled; runtimeMessage.clear(); BlockExitGesture();
         if(enabled) { targetMonitor=ConfiguredMonitor(); if(!targetMonitor) targetMonitor=CursorMonitor(); }
         else locker.Unlock();
         if(!preview && !SaveConfig(configPath,cfg)) runtimeMessage=L"本次状态已更改，但配置保存失败";
@@ -283,7 +291,7 @@ namespace
         ShowSettingsDialog(mainWindow,cfg,ApplySettingsChange,[](bool recording)
         {
             if(shuttingDown) return;
-            exitGesture.RequireRelease(); rearmShortcuts=true;
+            rearmShortcuts=true; BlockExitGesture();
             if(recording) UnregisterShortcuts();
             else
             {
@@ -340,6 +348,19 @@ namespace
             PostMessageW(mainWindow,WM_EXIT_REQUEST,0,0);
         if(IsWindowVisible(mainWindow) && (wasHolding||exitGesture.Holding()))
         { RECT r=theme.R(28,430,684,100); InvalidateRect(mainWindow,&r,FALSE); }
+        PaceExitPoll();
+    }
+    void PollExit()
+    {
+        if(rearmShortcuts && !HotkeyDown(cfg.toggle) && !HotkeyDown(cfg.jumpLeft) && !HotkeyDown(cfg.jumpRight)) rearmShortcuts=false;
+        UpdateExit(true);
+    }
+    bool AffectsUnlock(DWORD key)
+    {
+        if(!cfg.enabled || !IsSet(cfg.unlock)) return false;
+        if(key==static_cast<DWORD>(cfg.unlock.key)) return true;
+        bool modifier=key==VK_LWIN || key==VK_RWIN || (key>=VK_SHIFT && key<=VK_MENU) || (key>=VK_LSHIFT && key<=VK_RMENU);
+        return modifier && (cfg.unlock.key==0 || held[cfg.unlock.key]);
     }
     LRESULT CALLBACK KeyboardProc(int code,WPARAM wp,LPARAM lp)
     {
@@ -355,6 +376,10 @@ namespace
                 static const Hotkey emergency{{Modifier::Control,Modifier::Alt},VK_F12};
                 if(down && !previous && event->vkCode==VK_F12 && HotkeyDown(emergency,false))
                 { PostMessageW(mainWindow,WM_EMERGENCY,0,0); return 1; }
+                // GetAsyncKeyState only sees this key once the hook has returned, so re-check the
+                // lock right after that instead of leaving temporary unlock to the next TimerLock tick.
+                if(((down && !previous) || up) && AffectsUnlock(event->vkCode))
+                    SetTimer(mainWindow,TimerUnlockKey,USER_TIMER_MINIMUM,nullptr);
                 UpdateExit(false);
             }
         }
@@ -362,7 +387,7 @@ namespace
     }
     void CALLBACK WinEvent(HWINEVENTHOOK,DWORD event,HWND,LONG,LONG,DWORD,DWORD)
     {
-        if(event==EVENT_SYSTEM_DESKTOPSWITCH) exitGesture.RequireRelease();
+        if(event==EVENT_SYSTEM_DESKTOPSWITCH) BlockExitGesture();
         if(!shuttingDown) PostMessageW(mainWindow,WM_REFRESH_LOCK,0,0);
     }
     bool InstallHooks()
@@ -380,7 +405,8 @@ namespace
     void StopRuntime()
     {
         locker.Unlock();
-        KillTimer(mainWindow,TimerExit); KillTimer(mainWindow,TimerLock);
+        KillTimer(mainWindow,TimerExit); KillTimer(mainWindow,TimerLock); KillTimer(mainWindow,TimerUnlockKey);
+        exitPolling=false;
         UnregisterShortcuts();
         if(keyboardHook) { UnhookWindowsHookEx(keyboardHook); keyboardHook=nullptr; }
         for(auto hook:eventHooks) UnhookWinEvent(hook);
@@ -478,28 +504,28 @@ namespace
     void PaintMain()
     {
         Ui::Paint p(mainWindow,theme); HDC dc=p.dc; const auto& t=theme;
-        Ui::Label(dc,t,L"MOUSELOCK  /  GAME EDITION",28,21,520,22,t.small,Ui::Muted);
+        Ui::Label(dc,t,L"MOUSELOCK  /  GAME EDITION",28,21,520,22,t.caption,Ui::Muted);
         Ui::Label(dc,t,L"MouseLock",28,49,520,49,t.display);
         Ui::Label(dc,t,L"留在这一屏，专注眼前的事。",30,102,600,28,t.body,Ui::Muted);
         Ui::Round(dc,t.R(602,57,110,30),Ui::AccentSoft,Ui::AccentSoft,t.S(15));
-        Ui::Label(dc,t,L"轻盈 · 本地",602,57,110,30,t.small,Ui::Accent,DT_CENTER);
+        Ui::Label(dc,t,L"轻盈 · 本地",602,57,110,30,t.caption,Ui::Accent,DT_CENTER);
         Ui::Card(dc,t,28,152,684,162);
         std::wstring title=!cfg.enabled?L"准备好，进入专注。":temporarilyUnlocked?L"暂时，自由一下。":L"专注，不越界。";
         Ui::Label(dc,t,title,52,174,450,34,t.heading);
         Ui::Label(dc,t,StateText(),52,217,462,26,t.body,Ui::Muted);
         Ui::Line(dc,t,52,264,636);
         auto mode=cfg.gameOnly?L"游戏前台自动锁定":L"手动锁定";
-        Ui::Label(dc,t,mode,52,274,202,25,t.small,Ui::Muted);
+        Ui::Label(dc,t,mode,52,274,202,25,t.caption,Ui::Muted);
         std::wstring monitorText=L"目标 · 跟随当前屏幕";
         if(!cfg.monitor.empty())
         {
             auto position=cfg.monitor.find(L"DISPLAY");
             monitorText=L"目标 · 屏幕 "+(position==std::wstring::npos?cfg.monitor:cfg.monitor.substr(position+7));
         }
-        Ui::Label(dc,t,monitorText,338,274,350,25,t.small,Ui::Muted,DT_RIGHT);
+        Ui::Label(dc,t,monitorText,338,274,350,25,t.caption,Ui::Muted,DT_RIGHT);
         Ui::Card(dc,t,28,334,684,216);
         Ui::Label(dc,t,L"随手掌控",52,352,400,28);
-        Ui::Label(dc,t,L"全局快捷键",504,352,184,28,t.small,Ui::Muted,DT_RIGHT);
+        Ui::Label(dc,t,L"全局快捷键",504,352,184,28,t.caption,Ui::Muted,DT_RIGHT);
         Ui::Line(dc,t,52,393,636);
         Ui::Label(dc,t,L"切换锁定",52,409,174,32);
         Ui::Keycap(dc,t,KeyText(cfg.toggle),234,409,102);
@@ -519,9 +545,9 @@ namespace
             if(width>2) Ui::Round(dc,t.R(162,520,width,4),Ui::Accent,Ui::Accent,t.S(2));
         }
         Ui::Label(dc,t,exitText,162,473,526,27,nullptr,Ui::Accent);
-        Ui::Label(dc,t,L"松开即可取消，退出时自动释放鼠标。",162,501,526,22,t.small,Ui::Muted);
-        Ui::Label(dc,t,L"关闭窗口后继续在托盘运行。",28,623,510,24,t.small,Ui::Muted);
-        Ui::Label(dc,t,L"紧急解除  Ctrl + Alt + F12",28,649,510,22,t.small,Ui::Muted);
+        Ui::Label(dc,t,L"松开即可取消，退出时自动释放鼠标。",162,501,526,22,t.caption,Ui::Muted);
+        Ui::Label(dc,t,L"关闭窗口后继续在托盘运行。",28,623,510,24,t.caption,Ui::Muted);
+        Ui::Label(dc,t,L"紧急解除  Ctrl + Alt + F12",28,649,510,22,t.caption,Ui::Muted);
     }
     void CreateControls()
     {
@@ -573,7 +599,7 @@ namespace
         case WM_EMERGENCY:
             if(!shuttingDown)
             {
-                SetEnabled(false); exitGesture.RequireRelease();
+                SetEnabled(false);
                 notification.Show(hwnd,L"已紧急解除锁定",L"鼠标已释放；按切换快捷键可以重新启用。",targetMonitor);
             }
             return 0;
@@ -582,7 +608,7 @@ namespace
         case WM_REFRESH_LOCK: ApplyLock(); return 0;
         case WM_DISPLAYCHANGE: targetMonitor=nullptr; cachedForeground=nullptr; locker.Unlock(); ApplyLock(); SyncUi(); return 0;
         case WM_POWERBROADCAST:
-            exitGesture.RequireRelease();
+            BlockExitGesture();
             if(wp==PBT_APMSUSPEND) locker.Unlock();
             return TRUE;
         case WM_TIMER:
@@ -593,13 +619,10 @@ namespace
             }
             if(shuttingDown) return 0;
             if(wp==TimerNotificationPreview) { NotificationPreviewStep(); return 0; }
-            if(wp==TimerExit)
-            {
-                if(rearmShortcuts && !HotkeyDown(cfg.toggle) && !HotkeyDown(cfg.jumpLeft) && !HotkeyDown(cfg.jumpRight)) rearmShortcuts=false;
-                UpdateExit(true);
-            }
+            if(wp==TimerExit) PollExit();
+            if(wp==TimerUnlockKey) { KillTimer(hwnd,TimerUnlockKey); ApplyLock(); }
             if(wp==TimerLock)
-            { ApplyLock(); if(!trayAdded) { AddTray(); SyncUi(); } }
+            { PollExit(); ApplyLock(); if(!trayAdded) { AddTray(); SyncUi(); } }
             if(wp==TimerPreview)
             {
                 KillTimer(hwnd,TimerPreview);
@@ -692,8 +715,9 @@ int WINAPI wWinMain(HINSTANCE appInstance,HINSTANCE,PWSTR,int)
         std::wstring error;
         if(!InstallHooks()) runtimeMessage=L"键盘监听未能启动 · 请重新打开程序";
         if(!RegisterShortcuts(cfg,error)) { cfg.enabled=false; runtimeMessage=error; }
-        if(!SetTimer(mainWindow,TimerExit,25,nullptr) || !SetTimer(mainWindow,TimerLock,125,nullptr))
+        if(!SetTimer(mainWindow,TimerLock,LockPollMs,nullptr))
         { RequestExit(false); Gdiplus::GdiplusShutdown(gdiplusToken); CloseHandle(mutex); return 1; }
+        PaceExitPoll();
         targetMonitor=ConfiguredMonitor(); if(!targetMonitor) targetMonitor=CursorMonitor();
         ApplyLock();
     }

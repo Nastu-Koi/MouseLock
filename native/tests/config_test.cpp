@@ -51,6 +51,20 @@ int wmain(int argc,wchar_t** argv)
     Write(json,"{\"ExitHotkey\":null,\"ExitHoldMs\":3000}");
     loaded=LoadConfig(json); assert(!IsSet(loaded.exit) && loaded.exitHoldMs==3000);
 
+    Write(legacy,"enabled=1\r\nmode=game\r\nhotkey0= 3 , 65\r\nhotkey1=4,121\r\nprocesses=game.exe");
+    imported=ImportLegacyConfig(legacy); // CRLF, spacing, modifier bits and no final newline
+    assert(imported.enabled && imported.gameOnly && imported.processes==L"game.exe");
+    assert(FormatHotkey(imported.toggle)==L"Ctrl + Alt + A" && FormatHotkey(imported.unlock)==L"Shift + F10");
+    for(const char* invalid:{"hotkey0=8,65\nhotkey1=0,256\n","hotkey0=-1,65\nhotkey1=99999999999,121\n",
+                             "hotkey0=0;65\nhotkey1=,121\n","hotkey0=\nhotkey1=2\n","hotkey0=a,65\nhotkey1=0,b\n"})
+    {
+        Write(legacy,invalid); imported=ImportLegacyConfig(legacy);
+        assert(imported.toggle.key==VK_F12 && imported.unlock.key==VK_F10 && imported.exit.key==VK_F9);
+    }
+    Write(legacy,"hotkey0=0,0\nhotkey1=0,120\n"); // F9 was already bound, so the new exit binding stays empty
+    imported=ImportLegacyConfig(legacy);
+    assert(!IsSet(imported.toggle) && imported.unlock.key==VK_F9 && !IsSet(imported.exit));
+
     AppConfig duplicate; duplicate.exit=duplicate.toggle;
     assert(!ValidateConfig(duplicate,error));
     duplicate=AppConfig{}; duplicate.exit={{Modifier::Control,Modifier::Alt},VK_F12};

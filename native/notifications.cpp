@@ -81,7 +81,7 @@ void NotificationPopup::Paint()
     auto dc = paint.dc;
     Ui::Round(dc, theme_.R(0, 0, Width, Height), Ui::Background, Ui::Border, theme_.S(14));
     Ui::Round(dc, theme_.R(20, 20, 7, 7), Ui::Accent, Ui::Accent, theme_.S(3));
-    Ui::Label(dc, theme_, L"MOUSELOCK", 36, 12, Width-56, 24, theme_.small, Ui::Muted);
+    Ui::Label(dc, theme_, L"MOUSELOCK", 36, 12, Width-56, 24, theme_.caption, Ui::Muted);
     Ui::Label(dc, theme_, title_, 20, 39, Width-40, 31, theme_.heading, Ui::Text);
     auto old = SelectObject(dc, theme_.body);
     SetBkMode(dc, TRANSPARENT); SetTextColor(dc, Ui::Muted);

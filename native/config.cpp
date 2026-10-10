@@ -4,7 +4,8 @@
 #include <windows.h>
 #include <map>
 #include <algorithm>
-#include <sstream>
+#include <cctype>
+#include <cstdlib>
 #include <limits>
 #include <cwctype>
 
@@ -395,6 +396,27 @@ namespace
             return std::wstring(1, (wchar_t)c);
         return L"键 " + std::to_wstring(vk);
     }
+
+    // MouseLockGame 1.x wrote hotkeys as "modifiers,key". Parsed by hand to keep
+    // <sstream> out: it more than doubles the statically linked executable.
+    bool parseLegacyHotkey(const std::string& value, Hotkey& out)
+    {
+        const char* text = value.c_str();
+        char* end = nullptr;
+        long modifiers = std::strtol(text, &end, 10);
+        if (end == text) return false;
+        while (std::isspace(static_cast<unsigned char>(*end))) ++end;
+        if (*end != ',') return false;
+        text = end + 1;
+        long key = std::strtol(text, &end, 10);
+        if (end == text || modifiers < 0 || modifiers > 7 || key < 0 || key > 255) return false;
+        out.modifiers.clear();
+        out.key = key == 0 && modifiers == 0 ? -1 : static_cast<int>(key);
+        if (modifiers & MOD_CONTROL) out.modifiers.push_back(Modifier::Control);
+        if (modifiers & MOD_ALT) out.modifiers.push_back(Modifier::Alt);
+        if (modifiers & MOD_SHIFT) out.modifiers.push_back(Modifier::Shift);
+        return true;
+    }
 }
 
 // ---------------- 对外接口 ----------------
@@ -518,10 +540,13 @@ bool SaveConfig(const std::wstring& path, const AppConfig& cfg)
 AppConfig ImportLegacyConfig(const std::wstring& path)
 {
     AppConfig cfg;
-    std::istringstream input(ReadText(path));
-    std::string line;
-    while (std::getline(input, line))
+    const std::string text = ReadText(path);
+    for (size_t start = 0; start < text.size();)
     {
+        size_t end = text.find('\n', start);
+        if (end == std::string::npos) end = text.size();
+        std::string line = text.substr(start, end - start);
+        start = end + 1;
         if (!line.empty() && line.back() == '\r') line.pop_back();
         auto equals = line.find('=');
         if (equals == std::string::npos) continue;
@@ -532,20 +557,8 @@ AppConfig ImportLegacyConfig(const std::wstring& path)
         if (name == "auto_start") cfg.autoStart = value == "1";
         if (name == "monitor") cfg.monitor = Wide(value);
         if (name == "processes") cfg.processes = Wide(value);
-        if (name == "hotkey0" || name == "hotkey1")
-        {
-            std::istringstream fields(value);
-            int modifiers = 0, key = 0; char comma = 0;
-            if (fields >> modifiers >> comma >> key && comma == ',' && modifiers >= 0 && modifiers <= 7 && key >= 0 && key <= 255)
-            {
-                Hotkey hk;
-                hk.key = key == 0 && modifiers == 0 ? -1 : key;
-                if (modifiers & MOD_CONTROL) hk.modifiers.push_back(Modifier::Control);
-                if (modifiers & MOD_ALT) hk.modifiers.push_back(Modifier::Alt);
-                if (modifiers & MOD_SHIFT) hk.modifiers.push_back(Modifier::Shift);
-                (name == "hotkey0" ? cfg.toggle : cfg.unlock) = hk;
-            }
-        }
+        if (name == "hotkey0") parseLegacyHotkey(value, cfg.toggle);
+        if (name == "hotkey1") parseLegacyHotkey(value, cfg.unlock);
     }
     // The new default must never invalidate an existing F9 binding.
     if (FormatHotkey(cfg.exit) == FormatHotkey(cfg.toggle) || FormatHotkey(cfg.exit) == FormatHotkey(cfg.unlock)) cfg.exit.key = -1;

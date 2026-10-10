@@ -1,5 +1,5 @@
 #include "theme.h"
-#include <gdiplus.h>
+#include "gdiplus_compat.h"
 #include <dwmapi.h>
 #include <commctrl.h>
 #include <algorithm>
@@ -52,16 +52,16 @@ namespace Ui
     }
     Theme::~Theme()
     {
-        for (auto font : {body, small, heading, display, key}) DeleteObject(font);
+        for (auto font : {body, caption, heading, display, key}) DeleteObject(font);
         DeleteObject(background);
         DeleteObject(panel);
     }
     void Theme::SetDpi(UINT value)
     {
         dpi = value;
-        for (auto font : {body, small, heading, display, key}) if (font) DeleteObject(font);
+        for (auto font : {body, caption, heading, display, key}) if (font) DeleteObject(font);
         body = Font(dpi, 14, FW_NORMAL, L"Microsoft YaHei UI");
-        small = Font(dpi, 12, FW_NORMAL, L"Microsoft YaHei UI");
+        caption = Font(dpi, 12, FW_NORMAL, L"Microsoft YaHei UI");
         heading = Font(dpi, 21, FW_MEDIUM, L"Microsoft YaHei UI");
         display = Font(dpi, 36, FW_NORMAL, L"Georgia");
         key = Font(dpi, 14, FW_MEDIUM, L"Segoe UI");

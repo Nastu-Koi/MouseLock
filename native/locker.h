@@ -14,13 +14,13 @@ struct DisplayInfo
 };
 std::vector<DisplayInfo> GetDisplays();
 
+// 按设备名查找屏幕；不生成显示名称，供定时校验使用。未连接时返回 nullptr。
+HMONITOR FindDisplay(const std::wstring& device);
+
 class Locker
 {
 public:
     bool IsLocked() const { return m_locked; }
-
-    // 锁定到光标当前所在屏幕
-    bool LockToCurrentScreen();
 
     // 锁定到包含指定物理坐标的屏幕
     bool LockToScreenAt(int x, int y);
